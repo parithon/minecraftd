@@ -35,3 +35,19 @@ func Start() {
 	log.Println("Webhooks started")
 
 }
+
+func Shutdown(now bool) error {
+	if !now {
+		log.Println("Shutting down in 30 seconds...")
+		if _, err := http.Get("http://localhost:8090/webhooks/shutdown"); err != nil {
+			return err
+		}
+	} else {
+		log.Println("Shutting down NOW...")
+		if _, err := http.Get("http://localhost:8090/webhooks/shutdown/now"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

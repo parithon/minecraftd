@@ -18,4 +18,6 @@ VOLUME [ "/data" ]
 
 EXPOSE 19132/udp
 
-ENTRYPOINT [ "/app/minecraftd" ]
+ENV PATH /app:$PATH
+
+ENTRYPOINT [ "minecraftd" ]

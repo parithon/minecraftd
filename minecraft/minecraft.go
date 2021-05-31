@@ -152,7 +152,15 @@ func downloadBedrockServer() error {
 
 	log.Printf("Completed downloading latest Minecraft Bedrock server version: %s", version)
 
-	if _, err := os.Stat("bedrock-server"); os.IsExist(err) {
+	if server != nil {
+		for i := 6; i > 0; i-- {
+			serverStdin.Write([]byte(fmt.Sprintf("say shutting down in %d seconds...\n", (i * 5))))
+			time.Sleep(time.Second * time.Duration(5))
+		}
+		stop()
+	}
+
+	if _, err := os.Stat("bedrock-server"); err == nil {
 		os.Remove("bedrock-server")
 	}
 
@@ -161,21 +169,56 @@ func downloadBedrockServer() error {
 		log.Fatal("An error occurred while creating symlink to bedrock-server", err)
 	}
 
+	os.WriteFile("bedrock-server/version", []byte(version), 0744)
+
 	return nil
 }
 
-func Startup() error {
-	if _, err := os.Stat("bedrock-server"); os.IsNotExist(err) {
-		log.Println("Installing latest Minecraft Bedrock Server...")
-		if err := downloadBedrockServer(); err != nil {
-			log.Fatal("An error occurred while downloading the Minecraft Bedrock server", err)
+func copy(src, dst string) error {
+	if _, err := os.Stat(dst); os.IsNotExist(err) {
+		in, err := os.Open(src)
+		if err != nil {
+			return err
 		}
-	} else {
-		log.Println("Checking for Minecraft Bedrock Server updates...")
+		defer in.Close()
+
+		out, err := os.Create(dst)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+
+		_, err = io.Copy(out, in)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func symlink(name string) {
+	data := fmt.Sprintf("/data/%s", name)
+	app := fmt.Sprintf("/app/bedrock-server/%s", name)
+
+	if _, err := os.Stat(data); os.IsNotExist(err) {
+		if err := copy(app, data); err != nil {
+			log.Fatal(err)
+		}
 	}
 
-	os.Chmod("bedrock-server/bedrock_server", 0755)
+	if _, err := os.Stat(app); os.IsNotExist(err) {
+	} else {
+		if err := os.Remove(app); err != nil {
+			log.Fatal(err)
+		}
+	}
 
+	if err := os.Symlink(data, app); err != nil {
+		log.Fatalf("Failed to symlink the %s\n%s", data, err)
+	}
+}
+
+func start() {
 	log.Println("Starting bedrock_server...")
 	server = exec.Command("./bedrock_server")
 	server.Dir = "bedrock-server"
@@ -192,19 +235,90 @@ func Startup() error {
 	}
 
 	log.Println("Started bedrock_server")
-
-	return nil
 }
 
 func stop() {
-	serverStdin.Write([]byte("say Server is shutting down NOW...\n"))
+	serverStdin.Write([]byte("say shutting down NOW...\n"))
 	time.Sleep(time.Second * time.Duration(5))
 	serverStdin.Write([]byte("stop\n"))
 	if _, err := server.Process.Wait(); err != nil {
 		log.Fatal(err)
 	}
 	serverStdin.Close()
+	server = nil
+	serverStdin = nil
 	log.Println("Stopped bedrock_server")
+}
+
+func checkForUpdates() error {
+	log.Println("Checking for Minecraft Bedrock Server updates...")
+	versionbytes, err := os.ReadFile("bedrock-server/version")
+	if err != nil {
+		log.Fatal(err)
+	}
+	version := string(versionbytes)
+	log.Printf("Current: %s", version)
+
+	log.Println("Gathering latest minecraft version")
+	resp, err := http.Get(minecraftnet)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	dlregx := regexp.MustCompile(downloadRegexStr)
+	verregx := regexp.MustCompile(versionRegexStr)
+	downloadUrl := dlregx.FindString(string(body))
+	onlineversion := verregx.FindStringSubmatch(downloadUrl)[1]
+	log.Printf("Available: %s", onlineversion)
+
+	if version != onlineversion {
+		log.Println("New version available, downloading...")
+		if err := downloadBedrockServer(); err != nil {
+			log.Fatal("An error occurred while downloading the Minecraft Bedrock server", err)
+		}
+
+		os.Chmod("bedrock-server/bedrock_server", 0755)
+
+		symlink("worlds")
+		symlink("server.properties")
+		symlink("permissions.json")
+		symlink("whitelist.json")
+
+		start()
+	} else {
+		log.Println("No new version available")
+	}
+
+	return nil
+}
+
+func Startup() error {
+	if _, err := os.Stat("bedrock-server"); os.IsNotExist(err) {
+		log.Println("Installing latest Minecraft Bedrock Server...")
+		if err := downloadBedrockServer(); err != nil {
+			log.Fatal("An error occurred while downloading the Minecraft Bedrock server", err)
+		}
+
+		os.Chmod("bedrock-server/bedrock_server", 0755)
+
+		symlink("worlds")
+		symlink("server.properties")
+		symlink("permissions.json")
+		symlink("whitelist.json")
+	} else {
+		checkForUpdates()
+	}
+
+	start()
+
+	return nil
 }
 
 func Shutdown(s os.Signal) error {
@@ -213,7 +327,7 @@ func Shutdown(s os.Signal) error {
 	if s == syscall.SIGQUIT {
 		go func() {
 			for i := 6; i > 0; i-- {
-				serverStdin.Write([]byte(fmt.Sprintf("say Server is shutting down in %d seconds...\n", (i * 5))))
+				serverStdin.Write([]byte(fmt.Sprintf("say shutting down in %d seconds...\n", (i * 5))))
 				time.Sleep(time.Second * time.Duration(5))
 			}
 			stop()
@@ -227,6 +341,17 @@ func Shutdown(s os.Signal) error {
 	return nil
 }
 
-func Wait() error {
-	return server.Wait()
+func Wait() {
+	go func() {
+		for {
+			time.Sleep(time.Hour * time.Duration(12))
+			checkForUpdates()
+		}
+	}()
+	for {
+		time.Sleep(time.Millisecond * time.Duration(500))
+		if server == nil {
+			os.Exit(0)
+		}
+	}
 }
