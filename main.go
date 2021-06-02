@@ -2,45 +2,41 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/parithon/minecraftd/management"
 	"github.com/parithon/minecraftd/minecraft"
-	"github.com/parithon/minecraftd/webhooks"
+	"github.com/parithon/minecraftd/utils"
 )
 
-func create_lock_file(filename string) (*os.File, error) {
-	if _, err := os.Stat(filename); err == nil {
-		if err := os.Remove(filename); err != nil {
-			return nil, err
-		}
-	}
-	return os.OpenFile(filename, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0666)
-}
-
 func main() {
-
-	lockfile := fmt.Sprintf("%s.lock", os.Args[0])
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "shutdown":
 			{
-				webhooks.Shutdown(false)
+				management.Shutdown(false)
 				return
 			}
 		case "terminate":
 			{
-				webhooks.Shutdown(true)
+				management.Shutdown(true)
+				return
+			}
+		case "healthcheck":
+			{
+				management.Healthcheck()
 				return
 			}
 		}
 	}
 
-	if _, err := create_lock_file(lockfile); err != nil {
+	lockfile := fmt.Sprintf("%s.lock", os.Args[0])
+	if _, err := utils.CreateLock(lockfile); err != nil {
 		fmt.Println(err)
+		os.Exit(-1)
 	}
 
 	sigs := make(chan os.Signal, 1)
@@ -50,13 +46,12 @@ func main() {
 
 	go func() {
 		s := <-sigs
-		log.Printf("RECEIVED: %s", s)
 		if err := minecraft.Shutdown(s); err != nil {
-			panic(err)
+			utils.Fatal(err)
 		}
 	}()
 
+	management.Start()
 	minecraft.Startup()
-	webhooks.Start()
 	minecraft.Wait()
 }
