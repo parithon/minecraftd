@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"syscall"
+
+	"github.com/parithon/minecraftd/minecraft"
 )
 
 func shutdownHandler(w http.ResponseWriter, r *http.Request) {
@@ -22,11 +24,17 @@ func msgHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO: Add logic to send message to players
 }
 
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Healthcheck request received.\n")
+	minecraft.HealthCheck()
+}
+
 func Start() {
 
 	http.HandleFunc("/webhooks/shutdown", shutdownHandler)
 	http.HandleFunc("/webhooks/shutdown/now", shutdownNowHandler)
 	http.HandleFunc("/webhooks/msg", msgHandler)
+	http.HandleFunc("/webhooks/healthcheck", healthCheckHandler)
 
 	log.Println("Starting webhooks...")
 	go func() {
@@ -49,5 +57,13 @@ func Shutdown(now bool) error {
 		}
 	}
 
+	return nil
+}
+
+func Healthcheck() error {
+	log.Println("Sending health check request...")
+	if _, err := http.Get("http://localhost:8090/webhooks/healthcheck"); err != nil {
+		return err
+	}
 	return nil
 }

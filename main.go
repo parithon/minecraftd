@@ -36,6 +36,11 @@ func main() {
 				webhooks.Shutdown(true)
 				return
 			}
+		case "healthcheck":
+			{
+				webhooks.Healthcheck()
+				return
+			}
 		}
 	}
 

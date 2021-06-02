@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/parithon/minecraftd/discord"
 )
 
 var (
@@ -82,18 +84,18 @@ func unzip(src string, dest string) ([]string, error) {
 	return filenames, nil
 }
 
-func downloadBedrockServer() error {
+func downloadBedrockServer() (verison *string, err error) {
 	log.Println("Gathering latest minecraft version")
 	resp, err := http.Get(minecraftnet)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	dlregx := regexp.MustCompile(downloadRegexStr)
@@ -105,7 +107,7 @@ func downloadBedrockServer() error {
 
 	fileUrl, err := url.Parse(downloadUrl)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	path := fileUrl.Path
@@ -114,7 +116,7 @@ func downloadBedrockServer() error {
 
 	file, err := os.Create(fileName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	client := http.Client{
@@ -128,14 +130,14 @@ func downloadBedrockServer() error {
 	resp, err = client.Get(downloadUrl)
 	if err != nil {
 		os.Remove(fileName)
-		return err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 
 	if _, err := io.Copy(file, resp.Body); err != nil {
 		os.Remove(fileName)
-		return err
+		return nil, err
 	}
 
 	defer file.Close()
@@ -143,7 +145,7 @@ func downloadBedrockServer() error {
 	log.Printf("Unzipping latest Minecraft Bedrock version: %s\n", version)
 	if _, err := unzip(fileName, fmt.Sprintf("bedrock-server-%s", version)); err != nil {
 		os.Remove(fileName)
-		return err
+		return nil, err
 	}
 
 	if err := os.Remove(fileName); err != nil {
@@ -171,7 +173,7 @@ func downloadBedrockServer() error {
 
 	os.WriteFile("bedrock-server/version", []byte(version), 0744)
 
-	return nil
+	return &version, nil
 }
 
 func copy(src, dst string) error {
@@ -201,8 +203,10 @@ func symlink(name string) {
 	app := fmt.Sprintf("/app/bedrock-server/%s", name)
 
 	if _, err := os.Stat(data); os.IsNotExist(err) {
-		if err := copy(app, data); err != nil {
-			log.Fatal(err)
+		if _, err := os.Stat(app); err != nil {
+			if err := copy(app, data); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 
@@ -218,7 +222,7 @@ func symlink(name string) {
 	}
 }
 
-func start() {
+func start(version string) {
 	log.Println("Starting bedrock_server...")
 	server = exec.Command("./bedrock_server")
 	server.Dir = "bedrock-server"
@@ -235,6 +239,8 @@ func start() {
 	}
 
 	log.Println("Started bedrock_server")
+
+	discord.Started(version)
 }
 
 func stop() {
@@ -247,10 +253,11 @@ func stop() {
 	serverStdin.Close()
 	server = nil
 	serverStdin = nil
+	discord.Stopped()
 	log.Println("Stopped bedrock_server")
 }
 
-func checkForUpdates() error {
+func checkForUpdates() (*string, error) {
 	log.Println("Checking for Minecraft Bedrock Server updates...")
 	versionbytes, err := os.ReadFile("bedrock-server/version")
 	if err != nil {
@@ -262,14 +269,14 @@ func checkForUpdates() error {
 	log.Println("Gathering latest minecraft version")
 	resp, err := http.Get(minecraftnet)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	dlregx := regexp.MustCompile(downloadRegexStr)
@@ -280,7 +287,8 @@ func checkForUpdates() error {
 
 	if version != onlineversion {
 		log.Println("New version available, downloading...")
-		if err := downloadBedrockServer(); err != nil {
+		ver, err := downloadBedrockServer()
+		if err != nil {
 			log.Fatal("An error occurred while downloading the Minecraft Bedrock server", err)
 		}
 
@@ -291,18 +299,20 @@ func checkForUpdates() error {
 		symlink("permissions.json")
 		symlink("whitelist.json")
 
-		start()
+		start(*ver)
 	} else {
 		log.Println("No new version available")
 	}
 
-	return nil
+	return &version, nil
 }
 
 func Startup() error {
+	var version *string
 	if _, err := os.Stat("bedrock-server"); os.IsNotExist(err) {
 		log.Println("Installing latest Minecraft Bedrock Server...")
-		if err := downloadBedrockServer(); err != nil {
+		version, err = downloadBedrockServer()
+		if err != nil {
 			log.Fatal("An error occurred while downloading the Minecraft Bedrock server", err)
 		}
 
@@ -312,11 +322,15 @@ func Startup() error {
 		symlink("server.properties")
 		symlink("permissions.json")
 		symlink("whitelist.json")
+
 	} else {
-		checkForUpdates()
+		version, err = checkForUpdates()
+		if err != nil {
+			log.Fatal("An error occurred while checking for updates to Minecraft Bedrock server", err)
+		}
 	}
 
-	start()
+	start(*version)
 
 	return nil
 }
@@ -354,4 +368,8 @@ func Wait() {
 			os.Exit(0)
 		}
 	}
+}
+
+func HealthCheck() {
+	discord.HealthChecked(true)
 }
