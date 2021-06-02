@@ -49,9 +49,11 @@ func main() {
 		if err := minecraft.Shutdown(s); err != nil {
 			utils.Fatal(err)
 		}
+		utils.RemoveLock()
 	}()
 
 	management.Start()
 	minecraft.Startup()
 	minecraft.Wait()
+
 }

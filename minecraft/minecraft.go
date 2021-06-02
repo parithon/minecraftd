@@ -110,19 +110,18 @@ func symlink(name string) {
 		return
 	}
 
-	if _, err := os.Stat(app); os.IsNotExist(err) {
-		return
-	}
-
-	if _, err := os.Stat(data); os.IsNotExist(err) {
-		if _, err := os.Stat(app); err == nil {
-			if err := utils.Copy(app, data); err == nil {
-				os.Remove(app)
-				os.Symlink(data, app)
-			}
+	if _, err := os.Stat(data); os.IsNotExist(err) { // file does not exist at data location
+		if _, err := os.Stat(app); err != nil { // file does exist at app location
+			utils.Copy(app, data) // copy the file to the data location
+		}
+	} else { // file already exists at the data location
+		if _, err := os.Stat(app); err == nil { // file exists at app location
+			os.Remove(app) // remove the file so we can symlink it to data location
+		}
+		if err := os.Symlink(data, app); err != nil {
+			utils.Fatal("An error occurred while linking your data files\n", err)
 		}
 	}
-
 }
 
 func start(version string) {

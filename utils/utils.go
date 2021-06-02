@@ -25,6 +25,10 @@ func CreateLock(filename string) (*os.File, error) {
 	return nil, errors.New("an instance is already running")
 }
 
+func RemoveLock() {
+	lockfile.Close()
+	os.Remove(lockfilePath)
+}
 func Unzip(src string, dest string) ([]string, error) {
 
 	var filenames []string
@@ -103,17 +107,12 @@ func Copy(src, dst string) error {
 	return nil
 }
 
-func fatal() {
-	lockfile.Close()
-	os.Remove(lockfilePath)
-}
-
 func Fatal(v ...interface{}) {
-	fatal()
+	RemoveLock()
 	log.Fatal(v...)
 }
 
 func Fatalf(format string, v ...interface{}) {
-	fatal()
+	RemoveLock()
 	log.Fatalf(format, v...)
 }
