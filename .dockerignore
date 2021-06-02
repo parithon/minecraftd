@@ -2,3 +2,6 @@
 .vscode
 .dockerignore
 Dockerfile
+bedrock-server*
+*.lock
+minecraftd
