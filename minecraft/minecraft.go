@@ -253,9 +253,7 @@ func Startup() error {
 	if _, err := os.Stat("bedrock-server"); os.IsNotExist(err) {
 		version = install()
 	} else {
-		// version = update()
-		ver := "1.10.0.7"
-		version = &ver
+		version = update()
 	}
 
 	start(*version)
