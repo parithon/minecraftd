@@ -19,6 +19,7 @@ import (
 )
 
 const minecraftnet = "https://www.minecraft.net/en-us/download/server/bedrock"
+const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.33 (KHTML, like Gecko) Chrome/90.0.15.212 Safari/537.33"
 
 var (
 	server      *exec.Cmd
@@ -30,7 +31,28 @@ var (
 
 func downloadBedrockServer() (verison *string, err error) {
 	log.Println("Gathering latest minecraft version")
-	resp, err := http.Get(minecraftnet)
+	req, err := http.NewRequest("GET", minecraftnet, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("Accept-Language", "en")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("User-Agent", userAgent)
+
+	client := &http.Client{
+		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+			r.Header.Set("Accept-Encoding", "identity")
+			r.Header.Set("Accept-Language", "en")
+			r.Header.Set("Cache-Control", "no-cache")
+			r.Header.Set("User-Agent", userAgent)
+			r.URL.Opaque = r.URL.Path
+			return nil
+		},
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +64,8 @@ func downloadBedrockServer() (verison *string, err error) {
 		return nil, err
 	}
 
-	downloadUrl := dlregx.FindString(string(body))
+	html := string(body)
+	downloadUrl := dlregx.FindString(html)
 	version := verregx.FindStringSubmatch(downloadUrl)[1]
 
 	log.Printf("Version: %s\n", version)
@@ -59,13 +82,6 @@ func downloadBedrockServer() (verison *string, err error) {
 	file, err := os.Create(fileName)
 	if err != nil {
 		return nil, err
-	}
-
-	client := http.Client{
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
-			r.URL.Opaque = r.URL.Path
-			return nil
-		},
 	}
 
 	log.Printf("Downloading latest Minecraft Bedrock version: %s\n", version)
