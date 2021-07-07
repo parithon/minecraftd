@@ -196,9 +196,31 @@ func checkForUpdates() (bool, *string, error) {
 	log.Printf("Current: %s", version)
 
 	log.Println("Gathering latest minecraft version")
-	resp, err := http.Get(minecraftnet)
+
+	req, err := http.NewRequest("GET", minecraftnet, nil)
 	if err != nil {
 		return false, nil, err
+	}
+
+	req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("Accept-Language", "en")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("User-Agent", userAgent)
+
+	client := &http.Client{
+		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+			r.Header.Set("Accept-Encoding", "identity")
+			r.Header.Set("Accept-Language", "en")
+			r.Header.Set("Cache-Control", "no-cache")
+			r.Header.Set("User-Agent", userAgent)
+			r.URL.Opaque = r.URL.Path
+			return nil
+		},
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
 	}
 
 	defer resp.Body.Close()
